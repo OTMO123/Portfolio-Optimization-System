@@ -1,5 +1,5 @@
 Portfolio Optimization System
-Overview
+Overview:
 This comprehensive portfolio optimization system provides tools for sophisticated investment portfolio analysis, optimization, and management. It combines modern portfolio theory with AI-enhanced market analysis to deliver data-driven investment allocation recommendations.
 Key Components
 RiskReturnOptimizer
