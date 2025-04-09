@@ -1,0 +1,534 @@
+import React, { useState, useEffect, useCallback } from 'react';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ScatterChart, Scatter, ZAxis } from 'recharts';
+
+const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+export default function PortfolioOptimizer() {
+  const [inputTickers, setInputTickers] = useState('AAPL, MSFT, GOOGL, AMZN, TSLA');
+  const [tickers, setTickers] = useState([]);
+  const [startDate, setStartDate] = useState('2020-01-01');
+  const [endDate, setEndDate] = useState('2023-01-01');
+  const [investmentAmount, setInvestmentAmount] = useState(10000);
+  const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState('Enter tickers and dates to begin portfolio optimization.');
+  const [data, setData] = useState(null);
+  const [portfolioData, setPortfolioData] = useState(null);
+  const [efficientFrontierData, setEfficientFrontierData] = useState([]);
+  const [optimalPortfolio, setOptimalPortfolio] = useState(null);
+  const [minVolPortfolio, setMinVolPortfolio] = useState(null);
+  const [tab, setTab] = useState('dashboard');
+  const [riskFreeRate, setRiskFreeRate] = useState(0.02);
+
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    setMessage("Loading data and optimizing portfolio...");
+    try {
+      await sleep(500); // Simulate data loading
+      
+      // Parse tickers
+      const tickerList = inputTickers
+        .split(',')
+        .map(ticker => ticker.trim())
+        .filter(ticker => ticker);
+      
+      setTickers(tickerList);
+      
+      // Simulated data (in a real app, we'd fetch from Yahoo Finance)
+      const simulateReturns = () => {
+        return tickerList.reduce((obj, ticker) => {
+          // Generate random annual return between 5% and 25%
+          obj[ticker] = 0.05 + Math.random() * 0.2;
+          return obj;
+        }, {});
+      };
+      
+      const simulateRisks = () => {
+        return tickerList.reduce((obj, ticker) => {
+          // Generate random annual volatility between 15% and 40%
+          obj[ticker] = 0.15 + Math.random() * 0.25;
+          return obj;
+        }, {});
+      };
+      
+      const returns = simulateReturns();
+      const risks = simulateRisks();
+      
+      // Simulate correlation matrix (in reality we'd calculate this from historical returns)
+      const generateCorrelationMatrix = () => {
+        const matrix = {};
+        tickerList.forEach(ticker1 => {
+          matrix[ticker1] = {};
+          tickerList.forEach(ticker2 => {
+            if (ticker1 === ticker2) {
+              matrix[ticker1][ticker2] = 1.0;
+            } else if (matrix[ticker2] && matrix[ticker2][ticker1] !== undefined) {
+              matrix[ticker1][ticker2] = matrix[ticker2][ticker1];
+            } else {
+              // Generate random correlation between 0.3 and 0.7
+              matrix[ticker1][ticker2] = 0.3 + Math.random() * 0.4;
+            }
+          });
+        });
+        return matrix;
+      };
+      
+      const correlationMatrix = generateCorrelationMatrix();
+      
+      // Generate efficient frontier points
+      const generateEfficientFrontier = () => {
+        const points = [];
+        for (let i = 0; i < 100; i++) {
+          const risk = 0.1 + (i / 100) * 0.3;
+          // Use a formula that creates a curve: return = sqrt(risk) * adjustmentFactor
+          const ret = Math.sqrt(risk) * 0.3;
+          points.push({ risk, return: ret });
+        }
+        return points;
+      };
+      
+      const efficientFrontier = generateEfficientFrontier();
+      
+      // Generate optimal portfolio (maximum Sharpe ratio)
+      const maxSharpeRatio = Math.max(...efficientFrontier.map(p => 
+        (p.return - riskFreeRate) / p.risk));
+      
+      const optimalPoint = efficientFrontier.find(p => 
+        ((p.return - riskFreeRate) / p.risk) === maxSharpeRatio);
+      
+      // Find minimum volatility portfolio (lowest risk point after the minimum)
+      let minRisk = Math.min(...efficientFrontier.map(p => p.risk));
+      const minRiskPoint = efficientFrontier.find(p => p.risk === minRisk);
+      
+      // Calculate portfolio weights
+      const generateWeights = (numTickers) => {
+        // Generate random weights
+        const weights = Array(numTickers).fill(0).map(() => Math.random());
+        // Normalize to sum to 1
+        const sum = weights.reduce((a, b) => a + b, 0);
+        return weights.map(w => w / sum);
+      };
+      
+      const optimalWeights = generateWeights(tickerList.length);
+      const minVolWeights = generateWeights(tickerList.length);
+      
+      // Calculate allocation amounts
+      const optimalAllocation = tickerList.map((ticker, i) => ({
+        ticker,
+        weight: optimalWeights[i],
+        amount: optimalWeights[i] * investmentAmount,
+        return: returns[ticker],
+        risk: risks[ticker]
+      }));
+      
+      const minVolAllocation = tickerList.map((ticker, i) => ({
+        ticker,
+        weight: minVolWeights[i],
+        amount: minVolWeights[i] * investmentAmount,
+        return: returns[ticker],
+        risk: risks[ticker]
+      }));
+      
+      // Set state with all the calculated data
+      setData({
+        tickers: tickerList,
+        startDate,
+        endDate,
+        returns,
+        risks,
+        correlationMatrix
+      });
+      
+      setEfficientFrontierData(efficientFrontier);
+      
+      setOptimalPortfolio({
+        return: optimalPoint.return,
+        risk: optimalPoint.risk,
+        sharpeRatio: (optimalPoint.return - riskFreeRate) / optimalPoint.risk,
+        weights: optimalWeights,
+        allocation: optimalAllocation
+      });
+      
+      setMinVolPortfolio({
+        return: minRiskPoint.return,
+        risk: minRiskPoint.risk,
+        sharpeRatio: (minRiskPoint.return - riskFreeRate) / minRiskPoint.risk,
+        weights: minVolWeights,
+        allocation: minVolAllocation
+      });
+      
+      // Create data for each ticker to plot on the efficient frontier
+      const tickerData = tickerList.map(ticker => ({
+        ticker,
+        risk: risks[ticker],
+        return: returns[ticker]
+      }));
+      
+      setPortfolioData(tickerData);
+      
+      setMessage("Portfolio optimization complete!");
+    } catch (error) {
+      console.error("Error in optimization:", error);
+      setMessage(`Error: ${error.message}`);
+    } finally {
+      setLoading(false);
+    }
+  }, [inputTickers, startDate, endDate, investmentAmount, riskFreeRate]);
+  
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    fetchData();
+  };
+  
+  const formatPercent = (value) => `${(value * 100).toFixed(2)}%`;
+  const formatCurrency = (value) => `$${value.toFixed(2)}`;
+  
+  const renderDashboard = () => {
+    if (!data || !optimalPortfolio) return null;
+    
+    return (
+      <div className="p-4">
+        <h2 className="text-xl font-bold mb-4">Portfolio Analysis Dashboard</h2>
+        
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+          <div className="bg-white p-4 rounded shadow">
+            <h3 className="font-bold text-gray-700">Optimal Portfolio</h3>
+            <p className="text-2xl font-bold">{formatPercent(optimalPortfolio.return)}</p>
+            <p className="text-sm text-gray-500">Expected Annual Return</p>
+          </div>
+          
+          <div className="bg-white p-4 rounded shadow">
+            <h3 className="font-bold text-gray-700">Risk (Volatility)</h3>
+            <p className="text-2xl font-bold">{formatPercent(optimalPortfolio.risk)}</p>
+            <p className="text-sm text-gray-500">Expected Annual Volatility</p>
+          </div>
+          
+          <div className="bg-white p-4 rounded shadow">
+            <h3 className="font-bold text-gray-700">Sharpe Ratio</h3>
+            <p className="text-2xl font-bold">{optimalPortfolio.sharpeRatio.toFixed(2)}</p>
+            <p className="text-sm text-gray-500">Risk-Adjusted Return</p>
+          </div>
+        </div>
+        
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="bg-white p-4 rounded shadow">
+            <h3 className="font-bold mb-2">Efficient Frontier</h3>
+            <div className="h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <ScatterChart
+                  margin={{ top: 20, right: 20, bottom: 20, left: 10 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis 
+                    type="number" 
+                    dataKey="risk" 
+                    name="Risk" 
+                    label={{ value: 'Risk (Volatility)', position: 'bottom' }}
+                    tickFormatter={formatPercent}
+                    domain={['dataMin - 0.05', 'dataMax + 0.05']}
+                  />
+                  <YAxis 
+                    type="number" 
+                    dataKey="return" 
+                    name="Return" 
+                    label={{ value: 'Expected Return', angle: -90, position: 'left' }} 
+                    tickFormatter={formatPercent}
+                    domain={['dataMin - 0.05', 'dataMax + 0.05']}
+                  />
+                  <Tooltip 
+                    formatter={(value) => formatPercent(value)}
+                    labelFormatter={() => ''}
+                  />
+                  <Scatter name="Efficient Frontier" data={efficientFrontierData} fill="#8884d8" line />
+                  
+                  {/* Plot individual tickers */}
+                  <Scatter 
+                    name="Individual Assets" 
+                    data={portfolioData} 
+                    fill="#82ca9d"
+                  />
+                  
+                  {/* Plot optimal portfolio */}
+                  <Scatter 
+                    name="Optimal Portfolio" 
+                    data={[{ risk: optimalPortfolio.risk, return: optimalPortfolio.return }]} 
+                    fill="#ff7300"
+                    shape="star"
+                    legendType="star"
+                  />
+                  
+                  {/* Plot min volatility portfolio */}
+                  <Scatter 
+                    name="Min Volatility" 
+                    data={[{ risk: minVolPortfolio.risk, return: minVolPortfolio.return }]} 
+                    fill="#ff0000"
+                    legendType="circle"
+                  />
+                  
+                  <Legend />
+                </ScatterChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+          
+          <div className="bg-white p-4 rounded shadow">
+            <h3 className="font-bold mb-2">Portfolio Allocation</h3>
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-sm">
+                <thead>
+                  <tr className="border-b">
+                    <th className="text-left py-2">Asset</th>
+                    <th className="text-right py-2">Weight</th>
+                    <th className="text-right py-2">Amount</th>
+                    <th className="text-right py-2">Return</th>
+                    <th className="text-right py-2">Risk</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {optimalPortfolio.allocation.map((asset) => (
+                    <tr key={asset.ticker} className="border-b">
+                      <td className="py-2">{asset.ticker}</td>
+                      <td className="text-right py-2">{formatPercent(asset.weight)}</td>
+                      <td className="text-right py-2">${asset.amount.toFixed(2)}</td>
+                      <td className="text-right py-2">{formatPercent(asset.return)}</td>
+                      <td className="text-right py-2">{formatPercent(asset.risk)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr className="font-bold">
+                    <td className="py-2">Total</td>
+                    <td className="text-right py-2">100.00%</td>
+                    <td className="text-right py-2">${investmentAmount.toFixed(2)}</td>
+                    <td className="text-right py-2">{formatPercent(optimalPortfolio.return)}</td>
+                    <td className="text-right py-2">{formatPercent(optimalPortfolio.risk)}</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+  
+  const renderRiskAnalysis = () => {
+    if (!data || !optimalPortfolio) return null;
+    
+    // Create data for risk comparison
+    const riskData = tickers.map(ticker => ({
+      name: ticker,
+      risk: data.risks[ticker],
+      return: data.returns[ticker],
+      sharpe: (data.returns[ticker] - riskFreeRate) / data.risks[ticker]
+    }));
+    
+    // Sort by risk
+    riskData.sort((a, b) => b.risk - a.risk);
+    
+    return (
+      <div className="p-4">
+        <h2 className="text-xl font-bold mb-4">Risk Analysis</h2>
+        
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="bg-white p-4 rounded shadow">
+            <h3 className="font-bold mb-2">Asset Risk Comparison</h3>
+            <div className="h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart
+                  data={riskData}
+                  margin={{ top: 5, right: 30, left: 20, bottom: 30 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="name" />
+                  <YAxis tickFormatter={formatPercent} />
+                  <Tooltip formatter={(value) => formatPercent(value)} />
+                  <Legend />
+                  <Line type="monotone" dataKey="risk" stroke="#8884d8" name="Volatility" />
+                  <Line type="monotone" dataKey="return" stroke="#82ca9d" name="Return" />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+          
+          <div className="bg-white p-4 rounded shadow">
+            <h3 className="font-bold mb-2">Sharpe Ratio Comparison</h3>
+            <div className="h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart
+                  data={riskData}
+                  margin={{ top: 5, right: 30, left: 20, bottom: 30 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="name" />
+                  <YAxis />
+                  <Tooltip />
+                  <Legend />
+                  <Line type="monotone" dataKey="sharpe" stroke="#ff7300" name="Sharpe Ratio" />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+          
+          <div className="bg-white p-4 rounded shadow col-span-1 lg:col-span-2">
+            <h3 className="font-bold mb-2">Portfolio Comparison</h3>
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-sm">
+                <thead>
+                  <tr className="border-b">
+                    <th className="text-left py-2">Portfolio</th>
+                    <th className="text-right py-2">Return</th>
+                    <th className="text-right py-2">Risk</th>
+                    <th className="text-right py-2">Sharpe Ratio</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr className="border-b">
+                    <td className="py-2">Optimal Portfolio</td>
+                    <td className="text-right py-2">{formatPercent(optimalPortfolio.return)}</td>
+                    <td className="text-right py-2">{formatPercent(optimalPortfolio.risk)}</td>
+                    <td className="text-right py-2">{optimalPortfolio.sharpeRatio.toFixed(2)}</td>
+                  </tr>
+                  <tr className="border-b">
+                    <td className="py-2">Minimum Volatility Portfolio</td>
+                    <td className="text-right py-2">{formatPercent(minVolPortfolio.return)}</td>
+                    <td className="text-right py-2">{formatPercent(minVolPortfolio.risk)}</td>
+                    <td className="text-right py-2">{minVolPortfolio.sharpeRatio.toFixed(2)}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+  
+  return (
+    <div className="max-w-6xl mx-auto p-4 bg-gray-50 min-h-screen">
+      <h1 className="text-2xl font-bold mb-6">Portfolio Optimizer & Risk Analysis Tool</h1>
+      
+      <form onSubmit={handleSubmit} className="bg-white p-6 rounded shadow mb-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Stock Tickers (comma separated)
+            </label>
+            <input
+              type="text"
+              value={inputTickers}
+              onChange={(e) => setInputTickers(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="e.g. AAPL, MSFT, GOOGL"
+              disabled={loading}
+            />
+          </div>
+          
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Investment Amount (USD)
+            </label>
+            <input
+              type="number"
+              value={investmentAmount}
+              onChange={(e) => setInvestmentAmount(Number(e.target.value))}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              min="1000"
+              step="1000"
+              disabled={loading}
+            />
+          </div>
+        </div>
+        
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Start Date
+            </label>
+            <input
+              type="date"
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              disabled={loading}
+            />
+          </div>
+          
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              End Date
+            </label>
+            <input
+              type="date"
+              value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              disabled={loading}
+            />
+          </div>
+          
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Risk-Free Rate
+            </label>
+            <input
+              type="number"
+              value={riskFreeRate}
+              onChange={(e) => setRiskFreeRate(Number(e.target.value))}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              min="0"
+              max="0.1"
+              step="0.001"
+              disabled={loading}
+            />
+          </div>
+        </div>
+        
+        <button
+          type="submit"
+          className={`w-full py-2 px-4 rounded-md text-white font-medium ${
+            loading ? 'bg-blue-300' : 'bg-blue-600 hover:bg-blue-700'
+          }`}
+          disabled={loading}
+        >
+          {loading ? 'Optimizing Portfolio...' : 'Optimize Portfolio'}
+        </button>
+      </form>
+      
+      {message && <div className="mb-6 p-3 bg-blue-50 text-blue-800 rounded">{message}</div>}
+      
+      {data && (
+        <>
+          <div className="mb-6">
+            <div className="border-b border-gray-200">
+              <nav className="flex -mb-px">
+                <button
+                  onClick={() => setTab('dashboard')}
+                  className={`py-4 px-6 font-medium text-sm ${
+                    tab === 'dashboard'
+                      ? 'border-b-2 border-blue-500 text-blue-600'
+                      : 'text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  }`}
+                >
+                  Dashboard
+                </button>
+                <button
+                  onClick={() => setTab('risk')}
+                  className={`py-4 px-6 font-medium text-sm ${
+                    tab === 'risk'
+                      ? 'border-b-2 border-blue-500 text-blue-600'
+                      : 'text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  }`}
+                >
+                  Risk Analysis
+                </button>
+              </nav>
+            </div>
+          </div>
+          
+          {tab === 'dashboard' && renderDashboard()}
+          {tab === 'risk' && renderRiskAnalysis()}
+        </>
+      )}
+    </div>
+  );
+}
